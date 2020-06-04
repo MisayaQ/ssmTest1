@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xmlns:aop="http://www.springframework.org/schema/aop"
+       xmlns:tx="http://www.springframework.org/schema/tx"
+       xsi:schemaLocation="http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop-4.3.xsd
+		http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.2.xsd
+		http://www.springframework.org/schema/tx http://www.springframework.org/schema/tx/spring-tx-4.3.xsd
+		http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-4.3.xsd">
+    <context:component-scan base-package="com">
+        <context:include-filter type="annotation"
+                                expression="org.springframework.stereotype.Component"/>
+        <context:include-filter type="annotation"
+                                expression="org.springframework.stereotype.Repository"/>
+        <context:include-filter type="annotation"
+                                expression="org.springframework.stereotype.Service"/>
+    </context:component-scan>
+
+    <!-- 加载配数据源配置文件 db.properties -->
+    <context:property-placeholder location="classpath:jdbc.properties"/>
+
+    <!-- Spring的配置文件，这里主要配置和业务逻辑有关的 -->
+    <!--=================== 数据源，事务控制，xxx ================-->
+    <bean id="dataSource"
+          class="com.mchange.v2.c3p0.ComboPooledDataSource">
+        <property name="driverClass" value="${jdbc.driver}"/>
+        <property name="jdbcUrl" value="${jdbc.url}"/>
+        <property name="user" value="${jdbc.username}"/>
+        <property name="password" value="${jdbc.password}"/>
+    </bean>
+
+
+
+    <!--================== 配置和MyBatis的整合=============== -->
+    <!-- 配置MyBatis工厂: 构建SqlSessionFactory -->
+    <bean id="sqlSessionFactory" class="org.mybatis.spring.SqlSessionFactoryBean">
+        <!-- 1. 配置数据源 -->
+        <property name="dataSource" ref="dataSource"></property>
+        <!-- 2. 扫描映射文件 -->
+        <property name="mapperLocations">
+            <array>
+                <value>classpath:mapper/*.xml</value>
+            </array>
+        </property>
+        <!--3. 配置包扫描创建别名：pojo包实体类取别名 -->
+        <property name="typeAliasesPackage" value="com.entity"></property>
+        <!-- 4. 读取mybatis-config.xml配置文件-->
+        <property name="configLocation" value="classpath:mybatis/mybatis-config.xml"/>
+    </bean>
+
+    <!-- 配置扫描 dao 包，动态实现 dao 接口，注入到 spring 容器中 -->
+    <bean class="org.mybatis.spring.mapper.MapperScannerConfigurer">
+        <property name="basePackage" value="com.dao"/>
+        <!-- 配置SqlSessionFactory Bean的名称  [可选] -->
+        <!-- 注意使用 sqlSessionFactoryBeanName 避免出现spring 扫描组件失效问题 -->
+        <property name="sqlSessionFactoryBeanName" value="sqlSessionFactory"/>
+    </bean>
+
+    <!-- 配置一个可以执行批量的sqlSession -->
+    <!---配置sqlSessionTemplate：通过带参数的构造方法创建对象 -->
+    <bean id="sqlSessionTemplate" class="org.mybatis.spring.SqlSessionTemplate">
+        <!-- 以sqlSessionFactory为参数传入构造函数中 -->
+        <constructor-arg name="sqlSessionFactory" ref="sqlSessionFactory"></constructor-arg>
+        <!-- mybatis执行器，取值范围是SIMPLE/REUSE/BATCH三种类型 -->
+        <!--SIMPLE 就是普通的执行器；-->
+        <!--REUSE 执行器会重用预处理语句（prepared statements）；-->
+        <!--BATCH 执行器将重用语句并执行批量更新。-->
+        <constructor-arg name="executorType" value="BATCH"></constructor-arg>
+    </bean>
+
+
+
+    <!-- ===============事务控制的配置 ================-->
+    <!--
+        配置事务思路
+        1，配置事务管理器
+        2，配置事务通知（事务细节）
+        3，使用AOP将事务切入到Service层
+    -->
+    <!-- 1，配置事务管理器,依赖于数据源 -->
+    <bean id="transactionManager"
+          class="org.springframework.jdbc.datasource.DataSourceTransactionManager">
+        <!--控制数据源-->
+        <property name="dataSource" ref="dataSource"></property>
+    </bean>
+
+    <!-- 开启事务注解 -->
+    <tx:annotation-driven transaction-manager="transactionManager"/>
+
+    <!--2，配置事务通知（事务细节）-->
+    <tx:advice id="MyAdvice" transaction-manager="transactionManager">
+        <tx:attributes>
+            <!--所有方法都是事务方法-->
+            <tx:method name="find*" read-only="true" propagation="SUPPORTS"/>
+            <tx:method name="sel*" read-only="true" propagation="SUPPORTS"/>
+            <tx:method name="get*" read-only="true" propagation="SUPPORTS"/>
+            <tx:method name="count*" read-only="true" propagation="SUPPORTS"/>
+            <tx:method name="add*" read-only="false" propagation="REQUIRED"/>
+            <tx:method name="save*" read-only="false" propagation="REQUIRED"/>
+            <tx:method name="insert*" read-only="false" propagation="REQUIRED"/>
+            <tx:method name="del*" read-only="false" propagation="REQUIRED"/>
+            <tx:method name="delete*" read-only="false" propagation="REQUIRED"/>
+            <tx:method name="update*" read-only="false" propagation="REQUIRED"/>
+            <tx:method name="upt*" read-only="false" propagation="REQUIRED"/>
+        </tx:attributes>
+    </tx:advice>
+    <!--3，使用AOP将事务切入到Service层-->
+    <aop:config>
+        <!--配置切入点-->
+        <aop:pointcut id="txPoint" expression="execution(* com.service..*(..))"/>
+        <!--配置切面-->
+        <aop:advisor advice-ref="MyAdvice" pointcut-ref="txPoint"/>
+    </aop:config>
+
+    <!--Spring配置文件的核心点：数据源，与MyBatis的整合，事务控制-->
+
+</beans>
